@@ -8,12 +8,14 @@ namespace SukimaWalker.Core
         private const float CharacterCollisionRadius = 0.28f;
 
         private readonly float characterSpeed;
+        private readonly bool restartOnDeath;
 
         public StageRuntimeState State { get; }
 
-        public GameSimulation(StageData stageData, float characterSpeed)
+        public GameSimulation(StageData stageData, float characterSpeed, bool restartOnDeath = true)
         {
             this.characterSpeed = characterSpeed;
+            this.restartOnDeath = restartOnDeath;
             State = new StageRuntimeState(stageData, characterSpeed);
         }
 
@@ -410,7 +412,7 @@ namespace SukimaWalker.Core
 
         private void ResolveDeathOrClear()
         {
-            if (!State.Character.IsAlive)
+            if (!State.Character.IsAlive && restartOnDeath)
             {
                 Restart();
             }

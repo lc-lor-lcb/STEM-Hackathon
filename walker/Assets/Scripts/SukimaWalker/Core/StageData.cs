@@ -99,8 +99,8 @@ namespace SukimaWalker.Core
 
         public StageRuntimeState(StageData source, float characterSpeed)
         {
-            Source = source;
-            Terrain = BuildTerrain(source);
+            Source = StageDataUtility.Normalize(source);
+            Terrain = BuildTerrain(Source);
             Reset(characterSpeed);
         }
 
