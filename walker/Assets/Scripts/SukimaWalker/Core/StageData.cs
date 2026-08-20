@@ -28,11 +28,20 @@ namespace SukimaWalker.Core
                 {
                     "########",
                     "#.O....#",
-                    "#......#",
+                    "#...O..#",
                     "#.....G#",
                     "########"
                 },
-                signboards = Array.Empty<SignboardData>(),
+                signboards = new[]
+                {
+                    new SignboardData
+                    {
+                        id = "A",
+                        x = 3,
+                        y = 2,
+                        direction = "UP"
+                    }
+                },
                 character = new CharacterData
                 {
                     start_x = 1,
@@ -81,6 +90,7 @@ namespace SukimaWalker.Core
         public readonly StageData Source;
         public readonly CellType[,] Terrain;
         public readonly List<SignboardRuntimeState> Signboards = new List<SignboardRuntimeState>();
+        public readonly HashSet<Vector2Int> DisabledHoles = new HashSet<Vector2Int>();
         public readonly CharacterRuntimeState Character = new CharacterRuntimeState();
         public readonly FrameRuntimeState Frame = new FrameRuntimeState();
 
@@ -97,13 +107,15 @@ namespace SukimaWalker.Core
         public void Reset(float characterSpeed)
         {
             Signboards.Clear();
+            DisabledHoles.Clear();
             if (Source.signboards != null)
             {
-                foreach (SignboardData signboard in Source.signboards)
+                for (int i = 0; i < Source.signboards.Length; i++)
                 {
+                    SignboardData signboard = Source.signboards[i];
                     Signboards.Add(new SignboardRuntimeState
                     {
-                        Id = signboard.id,
+                        Id = string.IsNullOrWhiteSpace(signboard.id) ? $"Signboard_{i}" : signboard.id,
                         X = signboard.x,
                         Y = signboard.y,
                         Direction = DirectionExtensions.FromString(signboard.direction),
@@ -148,6 +160,24 @@ namespace SukimaWalker.Core
             }
 
             return Terrain[cell.x, cell.y];
+        }
+
+        public bool IsHoleDisabled(Vector2Int cell)
+        {
+            return DisabledHoles.Contains(cell);
+        }
+
+        public SignboardRuntimeState GetActiveSignboardAt(Vector2Int cell)
+        {
+            foreach (SignboardRuntimeState signboard in Signboards)
+            {
+                if (!signboard.Destroyed && signboard.X == cell.x && signboard.Y == cell.y)
+                {
+                    return signboard;
+                }
+            }
+
+            return null;
         }
 
         public static Vector2Int CellFromPosition(Vector2 position)

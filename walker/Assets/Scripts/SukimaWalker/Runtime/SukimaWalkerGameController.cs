@@ -39,7 +39,9 @@ namespace SukimaWalker.Runtime
         {
             FrameInputCommand frameInput = frameInputReader.Capture(simulation.State.Frame);
             simulation.Tick(Time.deltaTime, frameInput);
+            stageRenderer.SyncTerrainEffects(simulation.State);
             stageRenderer.SyncFrame(simulation.State.Frame);
+            stageRenderer.SyncSignboards(simulation.State);
             stageRenderer.SyncCharacter(simulation.State.Character);
         }
 

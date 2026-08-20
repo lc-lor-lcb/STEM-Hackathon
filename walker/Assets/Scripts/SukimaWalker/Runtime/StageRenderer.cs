@@ -8,6 +8,8 @@ namespace SukimaWalker.Runtime
     {
         private readonly List<GameObject> terrainTiles = new List<GameObject>();
         private readonly List<GameObject> framePieces = new List<GameObject>();
+        private readonly Dictionary<string, GameObject> signboardObjects = new Dictionary<string, GameObject>();
+        private SpriteRenderer[,] terrainRenderers;
         private Sprite squareSprite;
         private GameObject characterObject;
 
@@ -15,6 +17,7 @@ namespace SukimaWalker.Runtime
         {
             Clear();
             squareSprite = CreateSquareSprite();
+            terrainRenderers = new SpriteRenderer[state.Width, state.Height];
 
             for (int y = 0; y < state.Height; y++)
             {
@@ -29,6 +32,7 @@ namespace SukimaWalker.Runtime
                     spriteRenderer.sprite = squareSprite;
                     spriteRenderer.color = ColorForCell(state.Terrain[x, y]);
                     spriteRenderer.sortingOrder = 0;
+                    terrainRenderers[x, y] = spriteRenderer;
                     terrainTiles.Add(tile);
                 }
             }
@@ -43,7 +47,10 @@ namespace SukimaWalker.Runtime
             characterRenderer.sortingOrder = 10;
 
             CreateFramePieces();
+            CreateSignboards(state);
+            SyncTerrainEffects(state);
             SyncFrame(state.Frame);
+            SyncSignboards(state);
             SyncCharacter(state.Character);
         }
 
@@ -56,6 +63,55 @@ namespace SukimaWalker.Runtime
 
             characterObject.transform.position = GridToWorldCenter(character.Position.x, character.Position.y, -0.1f);
             characterObject.transform.rotation = Quaternion.Euler(0f, 0f, RotationForDirection(character.Direction));
+        }
+
+        public void SyncSignboards(StageRuntimeState state)
+        {
+            foreach (SignboardRuntimeState signboard in state.Signboards)
+            {
+                if (!signboardObjects.TryGetValue(signboard.Id, out GameObject signboardObject))
+                {
+                    continue;
+                }
+
+                signboardObject.SetActive(!signboard.Destroyed);
+                if (signboard.Destroyed)
+                {
+                    continue;
+                }
+
+                signboardObject.transform.position = GridToWorldCenter(signboard.X + 0.5f, signboard.Y + 0.5f, -0.15f);
+                signboardObject.transform.rotation = Quaternion.identity;
+
+                Transform arrow = signboardObject.transform.Find("Arrow");
+                if (arrow != null)
+                {
+                    arrow.localRotation = Quaternion.Euler(0f, 0f, RotationForDirection(signboard.Direction));
+                }
+            }
+        }
+
+        public void SyncTerrainEffects(StageRuntimeState state)
+        {
+            if (terrainRenderers == null)
+            {
+                return;
+            }
+
+            for (int y = 0; y < state.Height; y++)
+            {
+                for (int x = 0; x < state.Width; x++)
+                {
+                    SpriteRenderer terrainRenderer = terrainRenderers[x, y];
+                    if (terrainRenderer == null)
+                    {
+                        continue;
+                    }
+
+                    Vector2Int cell = new Vector2Int(x, y);
+                    terrainRenderer.color = ColorForCell(state.Terrain[x, y], state.IsHoleDisabled(cell));
+                }
+            }
         }
 
         public void SyncFrame(FrameRuntimeState frame)
@@ -110,6 +166,7 @@ namespace SukimaWalker.Runtime
             }
 
             terrainTiles.Clear();
+            terrainRenderers = null;
 
             if (characterObject != null)
             {
@@ -126,6 +183,16 @@ namespace SukimaWalker.Runtime
             }
 
             framePieces.Clear();
+
+            foreach (GameObject signboardObject in signboardObjects.Values)
+            {
+                if (signboardObject != null)
+                {
+                    Destroy(signboardObject);
+                }
+            }
+
+            signboardObjects.Clear();
         }
 
         private void CreateFramePieces()
@@ -150,14 +217,40 @@ namespace SukimaWalker.Runtime
             target.transform.localScale = new Vector3(width, height, 1f);
         }
 
-        private static Color ColorForCell(CellType cellType)
+        private void CreateSignboards(StageRuntimeState state)
+        {
+            foreach (SignboardRuntimeState signboard in state.Signboards)
+            {
+                GameObject root = new GameObject($"Signboard_{signboard.Id}");
+                root.transform.SetParent(transform, false);
+                root.transform.localScale = Vector3.one * 0.78f;
+
+                SpriteRenderer baseRenderer = root.AddComponent<SpriteRenderer>();
+                baseRenderer.sprite = squareSprite;
+                baseRenderer.color = new Color(0.05f, 0.66f, 0.78f, 1f);
+                baseRenderer.sortingOrder = 8;
+
+                GameObject arrow = new GameObject("Arrow");
+                arrow.transform.SetParent(root.transform, false);
+                arrow.transform.localPosition = new Vector3(0f, 0f, -0.01f);
+
+                SpriteRenderer arrowRenderer = arrow.AddComponent<SpriteRenderer>();
+                arrowRenderer.sprite = CreateArrowSprite();
+                arrowRenderer.color = new Color(0.03f, 0.08f, 0.1f, 1f);
+                arrowRenderer.sortingOrder = 9;
+
+                signboardObjects[signboard.Id] = root;
+            }
+        }
+
+        private static Color ColorForCell(CellType cellType, bool isDisabledHole = false)
         {
             switch (cellType)
             {
                 case CellType.Wall:
                     return new Color(0.12f, 0.14f, 0.17f, 1f);
                 case CellType.Hole:
-                    return new Color(0.05f, 0.05f, 0.07f, 1f);
+                    return isDisabledHole ? new Color(0.38f, 0.48f, 0.56f, 1f) : new Color(0.05f, 0.05f, 0.07f, 1f);
                 case CellType.Goal:
                     return new Color(0.25f, 0.8f, 0.42f, 1f);
                 case CellType.Floor:
@@ -192,6 +285,30 @@ namespace SukimaWalker.Runtime
             texture.SetPixel(0, 0, Color.white);
             texture.Apply();
             return Sprite.Create(texture, new Rect(0, 0, 1, 1), new Vector2(0.5f, 0.5f), 1f);
+        }
+
+        private static Sprite CreateArrowSprite()
+        {
+            const int size = 32;
+            Texture2D texture = new Texture2D(size, size)
+            {
+                filterMode = FilterMode.Point
+            };
+
+            Color clear = new Color(1f, 1f, 1f, 0f);
+            Color solid = Color.white;
+            for (int y = 0; y < size; y++)
+            {
+                for (int x = 0; x < size; x++)
+                {
+                    bool shaft = x >= 13 && x <= 18 && y >= 8 && y <= 24;
+                    bool head = y >= 18 && Mathf.Abs(x - 15.5f) <= 25 - y;
+                    texture.SetPixel(x, y, shaft || head ? solid : clear);
+                }
+            }
+
+            texture.Apply();
+            return Sprite.Create(texture, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), size);
         }
     }
 }
