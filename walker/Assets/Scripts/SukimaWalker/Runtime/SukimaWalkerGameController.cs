@@ -59,7 +59,6 @@ namespace SukimaWalker.Runtime
 
             FrameInputCommand frameInput = frameInputReader.Capture(simulation.State.Frame);
             simulation.Tick(Time.deltaTime, frameInput);
-            stageRenderer.SyncTerrainEffects(simulation.State);
             stageRenderer.SyncFrame(simulation.State.Frame);
             stageRenderer.SyncSignboards(simulation.State);
             stageRenderer.SyncCharacter(simulation.State.Character);
@@ -179,7 +178,7 @@ namespace SukimaWalker.Runtime
                 return;
             }
 
-            Vector3 target = StageRenderer.GridToWorldCenter(state.Character.Position.x, state.Character.Position.y, -10f);
+            Vector3 target = StageRenderer.GridToWorldCenter(state.Character.Cell.x + 0.5f, state.Character.Cell.y + 0.5f, -10f);
             float minX = halfWidth;
             float maxX = state.Width - halfWidth;
             float minY = -state.Height + halfHeight;

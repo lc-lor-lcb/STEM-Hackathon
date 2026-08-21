@@ -22,8 +22,8 @@ namespace SukimaWalker.Core
         public FrameDragMode Mode;
         public Vector2 StartPointer;
         public Vector2 CurrentPointer;
-        public Vector2 StartPosition;
-        public Vector2 StartSize;
+        public Vector2Int StartPosition;
+        public Vector2Int StartSize;
 
         public static FrameInputCommand None => new FrameInputCommand
         {

@@ -9,8 +9,8 @@ namespace SukimaWalker.Runtime
 
         private FrameDragMode activeMode = FrameDragMode.None;
         private Vector2 startPointer;
-        private Vector2 startPosition;
-        private Vector2 startSize;
+        private Vector2Int startPosition;
+        private Vector2Int startSize;
 
         public FrameInputCommand Capture(FrameRuntimeState frame)
         {

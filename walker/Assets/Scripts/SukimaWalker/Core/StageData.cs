@@ -90,7 +90,6 @@ namespace SukimaWalker.Core
         public readonly StageData Source;
         public readonly CellType[,] Terrain;
         public readonly List<SignboardRuntimeState> Signboards = new List<SignboardRuntimeState>();
-        public readonly HashSet<Vector2Int> DisabledHoles = new HashSet<Vector2Int>();
         public readonly CharacterRuntimeState Character = new CharacterRuntimeState();
         public readonly FrameRuntimeState Frame = new FrameRuntimeState();
 
@@ -107,7 +106,6 @@ namespace SukimaWalker.Core
         public void Reset(float characterSpeed)
         {
             Signboards.Clear();
-            DisabledHoles.Clear();
             if (Source.signboards != null)
             {
                 for (int i = 0; i < Source.signboards.Length; i++)
@@ -124,32 +122,29 @@ namespace SukimaWalker.Core
                 }
             }
 
-            Character.Position = new Vector2(Source.character.start_x + 0.5f, Source.character.start_y + 0.5f);
+            Character.Cell = new Vector2Int(Source.character.start_x, Source.character.start_y);
             Character.Direction = DirectionExtensions.FromString(Source.character.start_direction);
             Character.Speed = characterSpeed;
+            Character.MoveProgress = 0f;
             Character.IsAlive = true;
             Character.HasCleared = false;
-            Character.CurrentCell = new Vector2Int(Source.character.start_x, Source.character.start_y);
             Character.EnteredNewCellThisFrame = false;
-            Character.PendingWallHit = false;
 
-            Frame.MinSize = new Vector2(
-                Source.frame != null && Source.frame.min_width > 0f ? Source.frame.min_width : 1f,
-                Source.frame != null && Source.frame.min_height > 0f ? Source.frame.min_height : 1f);
-            Frame.MaxSize = new Vector2(
-                Source.frame != null && Source.frame.max_width > 0f ? Source.frame.max_width : 2f,
-                Source.frame != null && Source.frame.max_height > 0f ? Source.frame.max_height : 2f);
-            Frame.MinSize = Vector2.Max(Frame.MinSize, Vector2.one);
-            Frame.MaxSize = Vector2.Max(Frame.MaxSize, Frame.MinSize);
-            Frame.Size = new Vector2(
-                Mathf.Min(Frame.MaxSize.x, Mathf.Max(Frame.MinSize.x, Width - 2f)),
-                Mathf.Min(Frame.MaxSize.y, Mathf.Max(Frame.MinSize.y, Height - 2f)));
-            Frame.Position = new Vector2(
-                Mathf.Clamp((Width - Frame.Size.x) * 0.5f, 0f, Width - Frame.Size.x),
-                Mathf.Clamp((Height - Frame.Size.y) * 0.5f, 0f, Height - Frame.Size.y));
+            int minWidth = Mathf.Max(1, Source.frame != null ? Mathf.RoundToInt(Source.frame.min_width) : 1);
+            int minHeight = Mathf.Max(1, Source.frame != null ? Mathf.RoundToInt(Source.frame.min_height) : 1);
+            int maxWidth = Mathf.Max(minWidth, Source.frame != null ? Mathf.RoundToInt(Source.frame.max_width) : 2);
+            int maxHeight = Mathf.Max(minHeight, Source.frame != null ? Mathf.RoundToInt(Source.frame.max_height) : 2);
+
+            Frame.MinSize = new Vector2Int(minWidth, minHeight);
+            Frame.MaxSize = new Vector2Int(maxWidth, maxHeight);
+            Frame.Size = new Vector2Int(
+                Mathf.Clamp(Mathf.Max(minWidth, Width - 2), minWidth, Mathf.Min(maxWidth, Width)),
+                Mathf.Clamp(Mathf.Max(minHeight, Height - 2), minHeight, Mathf.Min(maxHeight, Height)));
+            Frame.Position = new Vector2Int(
+                Mathf.Clamp((Width - Frame.Size.x) / 2, 0, Width - Frame.Size.x),
+                Mathf.Clamp((Height - Frame.Size.y) / 2, 0, Height - Frame.Size.y));
             Frame.PreviousPosition = Frame.Position;
             Frame.PreviousSize = Frame.Size;
-            Frame.CharacterWasTouchingEdge = false;
         }
 
         public CellType GetTerrain(Vector2Int cell)
@@ -160,11 +155,6 @@ namespace SukimaWalker.Core
             }
 
             return Terrain[cell.x, cell.y];
-        }
-
-        public bool IsHoleDisabled(Vector2Int cell)
-        {
-            return DisabledHoles.Contains(cell);
         }
 
         public SignboardRuntimeState GetActiveSignboardAt(Vector2Int cell)
@@ -178,11 +168,6 @@ namespace SukimaWalker.Core
             }
 
             return null;
-        }
-
-        public static Vector2Int CellFromPosition(Vector2 position)
-        {
-            return new Vector2Int(Mathf.FloorToInt(position.x), Mathf.FloorToInt(position.y));
         }
 
         private static CellType[,] BuildTerrain(StageData source)
@@ -204,14 +189,13 @@ namespace SukimaWalker.Core
 
     public sealed class CharacterRuntimeState
     {
-        public Vector2 Position;
+        public Vector2Int Cell;
         public Direction Direction;
         public float Speed;
+        public float MoveProgress;
         public bool IsAlive;
         public bool HasCleared;
-        public Vector2Int CurrentCell;
         public bool EnteredNewCellThisFrame;
-        public bool PendingWallHit;
     }
 
     public sealed class SignboardRuntimeState
@@ -225,14 +209,19 @@ namespace SukimaWalker.Core
 
     public sealed class FrameRuntimeState
     {
-        public Vector2 Position;
-        public Vector2 Size;
-        public Vector2 MinSize;
-        public Vector2 MaxSize;
-        public Vector2 PreviousPosition;
-        public Vector2 PreviousSize;
-        public bool CharacterWasTouchingEdge;
+        public Vector2Int Position;
+        public Vector2Int Size;
+        public Vector2Int MinSize;
+        public Vector2Int MaxSize;
+        public Vector2Int PreviousPosition;
+        public Vector2Int PreviousSize;
 
-        public Rect Rect => new Rect(Position.x, Position.y, Size.x, Size.y);
+        public bool Contains(Vector2Int cell)
+        {
+            return cell.x >= Position.x
+                && cell.y >= Position.y
+                && cell.x < Position.x + Size.x
+                && cell.y < Position.y + Size.y;
+        }
     }
 }

@@ -9,15 +9,17 @@ namespace SukimaWalker.Runtime
         private readonly List<GameObject> terrainTiles = new List<GameObject>();
         private readonly List<GameObject> framePieces = new List<GameObject>();
         private readonly Dictionary<string, GameObject> signboardObjects = new Dictionary<string, GameObject>();
-        private SpriteRenderer[,] terrainRenderers;
+
+        private StageVisualSettings visualSettings;
         private Sprite squareSprite;
         private GameObject characterObject;
+        private SpriteRenderer characterRenderer;
 
         public void Render(StageRuntimeState state)
         {
             Clear();
+            visualSettings = Resources.Load<StageVisualSettings>("SukimaWalkerVisualSettings");
             squareSprite = CreateSquareSprite();
-            terrainRenderers = new SpriteRenderer[state.Width, state.Height];
 
             for (int y = 0; y < state.Height; y++)
             {
@@ -29,26 +31,22 @@ namespace SukimaWalker.Runtime
                     tile.transform.localScale = Vector3.one * 0.96f;
 
                     SpriteRenderer spriteRenderer = tile.AddComponent<SpriteRenderer>();
-                    spriteRenderer.sprite = squareSprite;
+                    spriteRenderer.sprite = GetCellSprite(state.Terrain[x, y]);
                     spriteRenderer.color = ColorForCell(state.Terrain[x, y]);
                     spriteRenderer.sortingOrder = 0;
-                    terrainRenderers[x, y] = spriteRenderer;
                     terrainTiles.Add(tile);
                 }
             }
 
             characterObject = new GameObject("Character");
             characterObject.transform.SetParent(transform, false);
-            characterObject.transform.localScale = Vector3.one * 0.55f;
+            characterObject.transform.localScale = Vector3.one;
 
-            SpriteRenderer characterRenderer = characterObject.AddComponent<SpriteRenderer>();
-            characterRenderer.sprite = squareSprite;
-            characterRenderer.color = new Color(1f, 0.72f, 0.2f, 1f);
+            characterRenderer = characterObject.AddComponent<SpriteRenderer>();
             characterRenderer.sortingOrder = 10;
 
             CreateFramePieces();
             CreateSignboards(state);
-            SyncTerrainEffects(state);
             SyncFrame(state.Frame);
             SyncSignboards(state);
             SyncCharacter(state.Character);
@@ -56,13 +54,16 @@ namespace SukimaWalker.Runtime
 
         public void SyncCharacter(CharacterRuntimeState character)
         {
-            if (characterObject == null)
+            if (characterObject == null || characterRenderer == null)
             {
                 return;
             }
 
-            characterObject.transform.position = GridToWorldCenter(character.Position.x, character.Position.y, -0.1f);
-            characterObject.transform.rotation = Quaternion.Euler(0f, 0f, RotationForDirection(character.Direction));
+            characterObject.transform.position = GridToWorldCenter(character.Cell.x + 0.5f, character.Cell.y + 0.5f, -0.1f);
+            Sprite directionSprite = visualSettings != null ? visualSettings.GetCharacterSprite(character.Direction) : null;
+            characterRenderer.sprite = directionSprite != null ? directionSprite : squareSprite;
+            characterRenderer.color = directionSprite != null ? Color.white : new Color(1f, 0.72f, 0.2f, 1f);
+            characterObject.transform.rotation = directionSprite != null ? Quaternion.identity : Quaternion.Euler(0f, 0f, RotationForDirection(character.Direction));
         }
 
         public void SyncSignboards(StageRuntimeState state)
@@ -87,29 +88,6 @@ namespace SukimaWalker.Runtime
                 if (arrow != null)
                 {
                     arrow.localRotation = Quaternion.Euler(0f, 0f, RotationForDirection(signboard.Direction));
-                }
-            }
-        }
-
-        public void SyncTerrainEffects(StageRuntimeState state)
-        {
-            if (terrainRenderers == null)
-            {
-                return;
-            }
-
-            for (int y = 0; y < state.Height; y++)
-            {
-                for (int x = 0; x < state.Width; x++)
-                {
-                    SpriteRenderer terrainRenderer = terrainRenderers[x, y];
-                    if (terrainRenderer == null)
-                    {
-                        continue;
-                    }
-
-                    Vector2Int cell = new Vector2Int(x, y);
-                    terrainRenderer.color = ColorForCell(state.Terrain[x, y], state.IsHoleDisabled(cell));
                 }
             }
         }
@@ -166,12 +144,12 @@ namespace SukimaWalker.Runtime
             }
 
             terrainTiles.Clear();
-            terrainRenderers = null;
 
             if (characterObject != null)
             {
                 Destroy(characterObject);
                 characterObject = null;
+                characterRenderer = null;
             }
 
             foreach (GameObject framePiece in framePieces)
@@ -211,12 +189,6 @@ namespace SukimaWalker.Runtime
             }
         }
 
-        private static void SetRect(GameObject target, float gridX, float gridY, float width, float height)
-        {
-            target.transform.position = GridToWorldCenter(gridX, gridY, -0.2f);
-            target.transform.localScale = new Vector3(width, height, 1f);
-        }
-
         private void CreateSignboards(StageRuntimeState state)
         {
             foreach (SignboardRuntimeState signboard in state.Signboards)
@@ -243,14 +215,36 @@ namespace SukimaWalker.Runtime
             }
         }
 
-        private static Color ColorForCell(CellType cellType, bool isDisabledHole = false)
+        private Sprite GetCellSprite(CellType cellType)
+        {
+            Sprite configuredSprite = visualSettings != null ? visualSettings.GetCellSprite(cellType) : null;
+            return configuredSprite != null ? configuredSprite : squareSprite;
+        }
+
+        private Color ColorForCell(CellType cellType)
+        {
+            if (visualSettings != null && visualSettings.GetCellSprite(cellType) != null)
+            {
+                return Color.white;
+            }
+
+            return FallbackColorForCell(cellType);
+        }
+
+        private static void SetRect(GameObject target, float gridX, float gridY, float width, float height)
+        {
+            target.transform.position = GridToWorldCenter(gridX, gridY, -0.2f);
+            target.transform.localScale = new Vector3(width, height, 1f);
+        }
+
+        private static Color FallbackColorForCell(CellType cellType)
         {
             switch (cellType)
             {
                 case CellType.Wall:
                     return new Color(0.12f, 0.14f, 0.17f, 1f);
                 case CellType.Hole:
-                    return isDisabledHole ? new Color(0.38f, 0.48f, 0.56f, 1f) : new Color(0.05f, 0.05f, 0.07f, 1f);
+                    return new Color(0.05f, 0.05f, 0.07f, 1f);
                 case CellType.Goal:
                     return new Color(0.25f, 0.8f, 0.42f, 1f);
                 case CellType.Floor:

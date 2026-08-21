@@ -1,5 +1,3 @@
-using UnityEngine;
-
 namespace SukimaWalker.Core
 {
     public enum Direction
@@ -26,23 +24,6 @@ namespace SukimaWalker.Core
                     return Direction.Left;
                 default:
                     return Direction.Right;
-            }
-        }
-
-        public static Vector2 ToGridVector(this Direction direction)
-        {
-            switch (direction)
-            {
-                case Direction.Up:
-                    return Vector2.down;
-                case Direction.Down:
-                    return Vector2.up;
-                case Direction.Left:
-                    return Vector2.left;
-                case Direction.Right:
-                    return Vector2.right;
-                default:
-                    return Vector2.right;
             }
         }
 
