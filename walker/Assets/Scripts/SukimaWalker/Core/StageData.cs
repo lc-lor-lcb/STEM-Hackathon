@@ -4,11 +4,13 @@ using UnityEngine;
 
 namespace SukimaWalker.Core
 {
+    // JSONに保存するステージ本体のデータです。
     [Serializable]
     public sealed class StageData
     {
         public string id;
         public string title;
+        public int difficulty;
         public int board_width;
         public int board_height;
         public string[] grid;
@@ -22,6 +24,7 @@ namespace SukimaWalker.Core
             {
                 id = "fallback",
                 title = "Fallback Test",
+                difficulty = 1,
                 board_width = 8,
                 board_height = 5,
                 grid = new[]
@@ -59,6 +62,7 @@ namespace SukimaWalker.Core
         }
     }
 
+    // 看板1枚の初期配置と向きを表す保存データです。
     [Serializable]
     public sealed class SignboardData
     {
@@ -68,6 +72,7 @@ namespace SukimaWalker.Core
         public string direction;
     }
 
+    // 主人公の初期位置と初期方向を表す保存データです。
     [Serializable]
     public sealed class CharacterData
     {
@@ -76,6 +81,7 @@ namespace SukimaWalker.Core
         public string start_direction;
     }
 
+    // Frameの最小/最大サイズを表す保存データです。
     [Serializable]
     public sealed class FrameData
     {
@@ -85,6 +91,7 @@ namespace SukimaWalker.Core
         public float max_height;
     }
 
+    // プレイ中に変化する、ステージの実行状態をまとめます。
     public sealed class StageRuntimeState
     {
         public readonly StageData Source;
@@ -103,6 +110,7 @@ namespace SukimaWalker.Core
             Reset(characterSpeed);
         }
 
+        // ステージ開始時の状態へ、主人公・看板・Frameを戻します。
         public void Reset(float characterSpeed)
         {
             Signboards.Clear();
@@ -116,6 +124,8 @@ namespace SukimaWalker.Core
                         Id = string.IsNullOrWhiteSpace(signboard.id) ? $"Signboard_{i}" : signboard.id,
                         X = signboard.x,
                         Y = signboard.y,
+                        PreviousX = signboard.x,
+                        PreviousY = signboard.y,
                         Direction = DirectionExtensions.FromString(signboard.direction),
                         Destroyed = false
                     });
@@ -147,6 +157,7 @@ namespace SukimaWalker.Core
             Frame.PreviousSize = Frame.Size;
         }
 
+        // 盤面外は壁として扱い、主人公や看板が外へ出ないようにします。
         public CellType GetTerrain(Vector2Int cell)
         {
             if (cell.x < 0 || cell.y < 0 || cell.x >= Width || cell.y >= Height)
@@ -157,6 +168,7 @@ namespace SukimaWalker.Core
             return Terrain[cell.x, cell.y];
         }
 
+        // 指定セルに生きている看板があるか調べます。
         public SignboardRuntimeState GetActiveSignboardAt(Vector2Int cell)
         {
             foreach (SignboardRuntimeState signboard in Signboards)
@@ -187,6 +199,7 @@ namespace SukimaWalker.Core
         }
     }
 
+    // 主人公の現在セル、方向、生死などを持つランタイム状態です。
     public sealed class CharacterRuntimeState
     {
         public Vector2Int Cell;
@@ -198,15 +211,19 @@ namespace SukimaWalker.Core
         public bool EnteredNewCellThisFrame;
     }
 
+    // 看板の現在セル、向き、破棄状態を持つランタイム状態です。
     public sealed class SignboardRuntimeState
     {
         public string Id;
         public int X;
         public int Y;
+        public int PreviousX;
+        public int PreviousY;
         public Direction Direction;
         public bool Destroyed;
     }
 
+    // Frameの整数セル位置とサイズを持つランタイム状態です。
     public sealed class FrameRuntimeState
     {
         public Vector2Int Position;
@@ -216,6 +233,7 @@ namespace SukimaWalker.Core
         public Vector2Int PreviousPosition;
         public Vector2Int PreviousSize;
 
+        // 指定セルがFrameの内側に含まれるかを整数グリッドで判定します。
         public bool Contains(Vector2Int cell)
         {
             return cell.x >= Position.x

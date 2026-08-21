@@ -5,6 +5,7 @@ using UnityEngine;
 
 namespace SukimaWalker.Runtime
 {
+    // エディターで選べる配置ツールです。
     public enum StageEditorTool
     {
         Floor,
@@ -16,6 +17,7 @@ namespace SukimaWalker.Runtime
         Erase
     }
 
+    // ゲーム内ステージエディターの入力、保存、バリデーションをまとめます。
     public sealed class StageEditorController
     {
         private const float PanelWidth = 320f;
@@ -26,6 +28,7 @@ namespace SukimaWalker.Runtime
         private bool renderDirty = true;
         private string widthInput;
         private string heightInput;
+        private string difficultyInput;
         private string minWidthInput;
         private string minHeightInput;
         private string maxWidthInput;
@@ -105,6 +108,14 @@ namespace SukimaWalker.Runtime
                 ApplyBoardSize();
             }
 
+            GUILayout.BeginHorizontal();
+            difficultyInput = LabeledShortTextField("***", difficultyInput);
+            GUILayout.EndHorizontal();
+            if (GUILayout.Button("Apply Stars"))
+            {
+                ApplyDifficulty();
+            }
+
             GUILayout.Space(8f);
             GUILayout.Label("Palette");
             DrawToolButton(StageEditorTool.Floor, "Floor");
@@ -181,6 +192,7 @@ namespace SukimaWalker.Runtime
             GUILayout.EndArea();
         }
 
+        // 盤面セルへのドラッグ/クリックを、現在選択中のツールとして反映します。
         private void ApplyTool(int x, int y)
         {
             StageDataUtility.Normalize(stageData);
@@ -234,6 +246,7 @@ namespace SukimaWalker.Runtime
             renderDirty = true;
         }
 
+        // 盤面サイズを変更し、外周壁と既存配置をできる範囲で保ちます。
         private void ApplyBoardSize()
         {
             if (int.TryParse(widthInput, out int width) && int.TryParse(heightInput, out int height))
@@ -244,6 +257,17 @@ namespace SukimaWalker.Runtime
             }
         }
 
+        private void ApplyDifficulty()
+        {
+            if (int.TryParse(difficultyInput, out int difficulty))
+            {
+                stageData.difficulty = Mathf.Clamp(difficulty, 1, 5);
+                SyncInputsFromStage();
+                renderDirty = true;
+            }
+        }
+
+        // Frameの最小/最大サイズをステージデータへ保存します。
         private void ApplyFrameSettings()
         {
             if (!float.TryParse(minWidthInput, out float minWidth)
@@ -263,6 +287,7 @@ namespace SukimaWalker.Runtime
             renderDirty = true;
         }
 
+        // JSONスキーマのステージファイルとして保存します。
         private void SaveCurrentStage()
         {
             StageDataUtility.Normalize(stageData);
@@ -270,6 +295,7 @@ namespace SukimaWalker.Runtime
             statusMessage = $"Saved: {path}";
         }
 
+        // 保存前・テスト前に見るべき問題を警告として出します。
         private void DrawValidation()
         {
             List<string> warnings = StageValidator.Validate(stageData);
@@ -325,6 +351,7 @@ namespace SukimaWalker.Runtime
             StageDataUtility.Normalize(stageData);
             widthInput = stageData.board_width.ToString();
             heightInput = stageData.board_height.ToString();
+            difficultyInput = stageData.difficulty.ToString();
             minWidthInput = stageData.frame.min_width.ToString("0.##");
             minHeightInput = stageData.frame.min_height.ToString("0.##");
             maxWidthInput = stageData.frame.max_width.ToString("0.##");

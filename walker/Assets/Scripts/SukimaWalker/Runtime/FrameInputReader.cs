@@ -3,6 +3,7 @@ using UnityEngine;
 
 namespace SukimaWalker.Runtime
 {
+    // マウス操作をFrame移動・リサイズ用の入力コマンドへ変換します。
     public sealed class FrameInputReader
     {
         private const float HitSlop = 0.25f;
@@ -12,6 +13,7 @@ namespace SukimaWalker.Runtime
         private Vector2Int startPosition;
         private Vector2Int startSize;
 
+        // ドラッグ開始位置と現在位置をグリッド座標で返します。
         public FrameInputCommand Capture(FrameRuntimeState frame)
         {
             if (Camera.main == null)

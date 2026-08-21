@@ -33,6 +33,8 @@ namespace SukimaWalker.Core
                 source.title = source.id;
             }
 
+            source.difficulty = Mathf.Clamp(source.difficulty <= 0 ? 1 : source.difficulty, 1, 5);
+
             string[] normalizedGrid = new string[source.board_height];
             for (int y = 0; y < source.board_height; y++)
             {
@@ -102,6 +104,7 @@ namespace SukimaWalker.Core
             {
                 id = "new_stage",
                 title = "New Stage",
+                difficulty = 1,
                 board_width = width,
                 board_height = height,
                 grid = grid,

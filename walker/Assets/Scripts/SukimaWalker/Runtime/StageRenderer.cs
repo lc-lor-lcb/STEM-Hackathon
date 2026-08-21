@@ -4,6 +4,7 @@ using UnityEngine;
 
 namespace SukimaWalker.Runtime
 {
+    // ランタイム状態をUnityのSpriteRenderer群として表示します。
     public sealed class StageRenderer : MonoBehaviour
     {
         private readonly List<GameObject> terrainTiles = new List<GameObject>();
@@ -15,6 +16,7 @@ namespace SukimaWalker.Runtime
         private GameObject characterObject;
         private SpriteRenderer characterRenderer;
 
+        // 盤面、主人公、Frame、看板を作り直して表示します。
         public void Render(StageRuntimeState state)
         {
             Clear();
@@ -52,6 +54,7 @@ namespace SukimaWalker.Runtime
             SyncCharacter(state.Character);
         }
 
+        // 主人公を1マスサイズで表示し、向きごとのSpriteへ切り替えます。
         public void SyncCharacter(CharacterRuntimeState character)
         {
             if (characterObject == null || characterRenderer == null)
@@ -66,6 +69,7 @@ namespace SukimaWalker.Runtime
             characterObject.transform.rotation = directionSprite != null ? Quaternion.identity : Quaternion.Euler(0f, 0f, RotationForDirection(character.Direction));
         }
 
+        // 看板の現在セルと破棄状態を表示へ反映します。
         public void SyncSignboards(StageRuntimeState state)
         {
             foreach (SignboardRuntimeState signboard in state.Signboards)
@@ -92,6 +96,7 @@ namespace SukimaWalker.Runtime
             }
         }
 
+        // Frameの整数位置・整数サイズを、青い枠とハンドルとして表示します。
         public void SyncFrame(FrameRuntimeState frame)
         {
             if (framePieces.Count != 12)

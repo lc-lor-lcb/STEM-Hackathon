@@ -3,6 +3,7 @@ using UnityEngine;
 
 namespace SukimaWalker.Runtime
 {
+    // タイルと主人公4方向のSpriteをまとめて差し替える設定です。
     [CreateAssetMenu(fileName = "SukimaWalkerVisualSettings", menuName = "Sukima Walker/Visual Settings")]
     public sealed class StageVisualSettings : ScriptableObject
     {

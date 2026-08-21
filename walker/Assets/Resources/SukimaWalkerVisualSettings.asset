@@ -16,7 +16,7 @@ MonoBehaviour:
   wallSprite: {fileID: 0}
   holeSprite: {fileID: 0}
   goalSprite: {fileID: 0}
-  characterUpSprite: {fileID: 0}
-  characterDownSprite: {fileID: 0}
-  characterLeftSprite: {fileID: 0}
-  characterRightSprite: {fileID: 0}
+  characterUpSprite: {fileID: 10913, guid: 0000000000000000f000000000000000, type: 0}
+  characterDownSprite: {fileID: 10907, guid: 0000000000000000f000000000000000, type: 0}
+  characterLeftSprite: {fileID: 10913, guid: 0000000000000000f000000000000000, type: 0}
+  characterRightSprite: {fileID: 10905, guid: 0000000000000000f000000000000000, type: 0}

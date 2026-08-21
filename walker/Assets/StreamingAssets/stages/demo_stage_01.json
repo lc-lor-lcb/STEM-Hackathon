@@ -1,6 +1,7 @@
 {
   "id": "demo_stage_01",
   "title": "Step 7-8 Push And Disabled Hole Check",
+  "difficulty": 1,
   "board_width": 8,
   "board_height": 5,
   "grid": [
