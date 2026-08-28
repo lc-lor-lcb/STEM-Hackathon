@@ -8,7 +8,7 @@ namespace SukimaWalker.Runtime
     // ゲーム全体の画面状態を管理し、セレクト、プレイ、エディターを切り替えます。
     public sealed class SukimaWalkerGameController : MonoBehaviour
     {
-        [SerializeField] private float characterSpeed = 3f;
+        [SerializeField] private float characterSpeed = 1.5f;
 
         private enum AppMode
         {
@@ -476,7 +476,7 @@ namespace SukimaWalker.Runtime
                 case '#':
                     return new Color(0.12f, 0.14f, 0.17f, 1f);
                 case 'O':
-                    return new Color(0.03f, 0.03f, 0.05f, 1f);
+                    return new Color(0.18f, 0.18f, 0.24f, 1f);
                 case 'G':
                     return new Color(0.25f, 0.8f, 0.42f, 1f);
                 default:

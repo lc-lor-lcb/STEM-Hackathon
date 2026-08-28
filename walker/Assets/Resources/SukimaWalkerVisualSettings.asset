@@ -14,9 +14,9 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   floorSprite: {fileID: 0}
   wallSprite: {fileID: 0}
-  holeSprite: {fileID: 0}
+  holeSprite: {fileID: 21300000, guid: 728a822e402817445a3b0c92e76ed876, type: 3}
   goalSprite: {fileID: 0}
-  characterUpSprite: {fileID: 10913, guid: 0000000000000000f000000000000000, type: 0}
-  characterDownSprite: {fileID: 10907, guid: 0000000000000000f000000000000000, type: 0}
-  characterLeftSprite: {fileID: 10913, guid: 0000000000000000f000000000000000, type: 0}
-  characterRightSprite: {fileID: 10905, guid: 0000000000000000f000000000000000, type: 0}
+  characterUpSprite: {fileID: 21300000, guid: 51e3c1c44f75c824986772aa46232b94, type: 3}
+  characterDownSprite: {fileID: 21300000, guid: 5a81a6e4fa98b6745b16455c0e635aa6, type: 3}
+  characterLeftSprite: {fileID: 21300000, guid: b64f5bbefd3ed5e43948596e1077f074, type: 3}
+  characterRightSprite: {fileID: 21300000, guid: e1b73c3ad954cd8448b097f5978bad6d, type: 3}

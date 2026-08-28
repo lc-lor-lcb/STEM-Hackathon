@@ -3,7 +3,7 @@ using UnityEngine;
 
 namespace SukimaWalker.Core
 {
-    // ゲーム本編とエディターのテストプレイで共有する、1マス単位の進行ルールです。
+    // すきまウォーカーのコアルールを、描画やUIから独立して1フレーム分進める処理です。
     public sealed class GameSimulation
     {
         private readonly float characterSpeed;
@@ -18,30 +18,29 @@ namespace SukimaWalker.Core
             State = new StageRuntimeState(stageData, characterSpeed);
         }
 
-        // 1フレーム分の入力、Frame、看板、主人公の順に評価します。
+        // ステージを初期状態へ戻します。
+        public void Restart()
+        {
+            State.Reset(characterSpeed);
+        }
+
+        // 1フレームの処理順です。Frame入力、主人公のFrame反射、主人公移動、地形効果の順で評価します。
         public void Tick(float deltaTime, FrameInputCommand frameInput)
         {
+            State.Character.EnteredNewCellThisFrame = false;
             if (!State.Character.IsAlive || State.Character.HasCleared)
             {
                 return;
             }
 
             ApplyPlayerInputAndUpdateFrame(frameInput);
-            PushSignboardsByFrameEdges();
-            ConstrainFrameToContainedActors();
             ResolveFrameEdgeCharacterCollision();
             MoveCharacter(deltaTime);
             EvaluateEnteredCellTerrainEffects();
             ResolveDeathOrClear();
         }
 
-        // ステージ開始時と即時リトライ時に、全ランタイム状態を初期値へ戻します。
-        public void Restart()
-        {
-            State.Reset(characterSpeed);
-        }
-
-        // Frameを整数マスにスナップして動かし、主人公を置き去りにしない範囲へ先に制限します。
+        // プレイヤーのドラッグ入力を、整数グリッドのFrame移動/リサイズへ変換して1マスずつ試します。
         private void ApplyPlayerInputAndUpdateFrame(FrameInputCommand frameInput)
         {
             FrameRuntimeState frame = State.Frame;
@@ -59,176 +58,244 @@ namespace SukimaWalker.Core
 
             if (frameInput.Mode == FrameDragMode.Move)
             {
-                frame.Position = ClampFramePosition(frameInput.StartPosition + pointerDelta, frame.Size);
-                ConstrainFrameToContainedCharacter();
+                Vector2Int targetPosition = ClampFramePosition(frameInput.StartPosition + pointerDelta, frame.Size);
+                StepFrameMoveTo(targetPosition);
                 return;
             }
 
-            ApplyResize(frame, frameInput, pointerDelta);
-            ConstrainFrameToContainedCharacter();
+            StepFrameResizeTo(BuildResizeTarget(frameInput, pointerDelta));
         }
 
-        // 動いてきたFrameの辺が内側の看板に重なった時だけ、看板を1マス押し出します。
-        private void PushSignboardsByFrameEdges()
+        // Frameの平行移動は、目的地へ一気に飛ばさず、1マスずつ成功/失敗を判定します。
+        private void StepFrameMoveTo(Vector2Int targetPosition)
+        {
+            while (State.Frame.Position.x < targetPosition.x && TryMoveFrameOneCell(Direction.Right))
+            {
+            }
+
+            while (State.Frame.Position.x > targetPosition.x && TryMoveFrameOneCell(Direction.Left))
+            {
+            }
+
+            while (State.Frame.Position.y < targetPosition.y && TryMoveFrameOneCell(Direction.Down))
+            {
+            }
+
+            while (State.Frame.Position.y > targetPosition.y && TryMoveFrameOneCell(Direction.Up))
+            {
+            }
+        }
+
+        // Frameのリサイズも、各辺を1マスずつ動かして、看板や主人公を置き去りにしない範囲で止めます。
+        private void StepFrameResizeTo(FrameRect target)
+        {
+            while (State.Frame.Position.x < target.Left && TryShrinkLeftEdge())
+            {
+            }
+
+            while (State.Frame.Position.x > target.Left && TryExpandLeftEdge())
+            {
+            }
+
+            while (FrameRight > target.Right && TryShrinkRightEdge())
+            {
+            }
+
+            while (FrameRight < target.Right && TryExpandRightEdge())
+            {
+            }
+
+            while (State.Frame.Position.y < target.Top && TryShrinkTopEdge())
+            {
+            }
+
+            while (State.Frame.Position.y > target.Top && TryExpandTopEdge())
+            {
+            }
+
+            while (FrameBottom > target.Bottom && TryShrinkBottomEdge())
+            {
+            }
+
+            while (FrameBottom < target.Bottom && TryExpandBottomEdge())
+            {
+            }
+        }
+
+        // Frame全体を1マス動かします。押し出される辺にいる看板だけを押し、主人公が外れるなら動きません。
+        private bool TryMoveFrameOneCell(Direction direction)
         {
             FrameRuntimeState frame = State.Frame;
-            CachePreviousSignboardCells();
-
-            int leftDelta = frame.Position.x - frame.PreviousPosition.x;
-            int rightDelta = frame.Position.x + frame.Size.x - frame.PreviousPosition.x - frame.PreviousSize.x;
-            int topDelta = frame.Position.y - frame.PreviousPosition.y;
-            int bottomDelta = frame.Position.y + frame.Size.y - frame.PreviousPosition.y - frame.PreviousSize.y;
-
-            if (leftDelta > 0)
+            switch (direction)
             {
-                ProcessSignboardPushes(Direction.Right, frame.PreviousPosition.x, frame.PreviousPosition.x + leftDelta, frame.Position.y, frame.Position.y + frame.Size.y);
-            }
+                case Direction.Right:
+                    FrameRect movedRightFrame = new FrameRect(frame.Position.x + 1, frame.Position.y, FrameRight + 1, FrameBottom);
+                    if (FrameRight >= State.Width || !TryReleaseColumn(frame.Position.x, Direction.Right, movedRightFrame))
+                    {
+                        return false;
+                    }
 
-            if (rightDelta < 0)
-            {
-                int previousRight = frame.PreviousPosition.x + frame.PreviousSize.x;
-                ProcessSignboardPushes(Direction.Left, previousRight + rightDelta, previousRight, frame.Position.y, frame.Position.y + frame.Size.y);
-            }
+                    frame.Position += Vector2Int.right;
+                    return true;
 
-            if (topDelta > 0)
-            {
-                ProcessSignboardPushes(Direction.Down, frame.Position.x, frame.Position.x + frame.Size.x, frame.PreviousPosition.y, frame.PreviousPosition.y + topDelta);
-            }
+                case Direction.Left:
+                    FrameRect movedLeftFrame = new FrameRect(frame.Position.x - 1, frame.Position.y, FrameRight - 1, FrameBottom);
+                    if (frame.Position.x <= 0 || !TryReleaseColumn(FrameRight - 1, Direction.Left, movedLeftFrame))
+                    {
+                        return false;
+                    }
 
-            if (bottomDelta < 0)
-            {
-                int previousBottom = frame.PreviousPosition.y + frame.PreviousSize.y;
-                ProcessSignboardPushes(Direction.Up, frame.Position.x, frame.Position.x + frame.Size.x, previousBottom + bottomDelta, previousBottom);
-            }
-        }
+                    frame.Position += Vector2Int.left;
+                    return true;
 
-        // 主人公が次に進むマスがFrame外なら、壁と同じくその場で180度反転します。
-        private void ResolveFrameEdgeCharacterCollision()
-        {
-            CharacterRuntimeState character = State.Character;
-            Vector2Int nextCell = character.Cell + DirectionToCellStep(character.Direction);
-            if (State.Frame.Contains(character.Cell) && !State.Frame.Contains(nextCell))
-            {
-                character.Direction = character.Direction.Opposite();
-                character.MoveProgress = 0f;
-            }
-        }
+                case Direction.Down:
+                    FrameRect movedDownFrame = new FrameRect(frame.Position.x, frame.Position.y + 1, FrameRight, FrameBottom + 1);
+                    if (FrameBottom >= State.Height || !TryReleaseRow(frame.Position.y, Direction.Down, movedDownFrame))
+                    {
+                        return false;
+                    }
 
-        // 主人公を一定テンポで1マスだけ進めます。判定は常に整数マスで行います。
-        private void MoveCharacter(float deltaTime)
-        {
-            CharacterRuntimeState character = State.Character;
-            character.EnteredNewCellThisFrame = false;
-            character.MoveProgress += Mathf.Max(0f, deltaTime * character.Speed);
+                    frame.Position += Vector2Int.up;
+                    return true;
 
-            if (character.MoveProgress < 1f)
-            {
-                return;
-            }
+                case Direction.Up:
+                    FrameRect movedUpFrame = new FrameRect(frame.Position.x, frame.Position.y - 1, FrameRight, FrameBottom - 1);
+                    if (frame.Position.y <= 0 || !TryReleaseRow(FrameBottom - 1, Direction.Up, movedUpFrame))
+                    {
+                        return false;
+                    }
 
-            character.MoveProgress -= Mathf.Floor(character.MoveProgress);
-            Vector2Int nextCell = character.Cell + DirectionToCellStep(character.Direction);
-            if (State.GetTerrain(nextCell) == CellType.Wall)
-            {
-                character.Direction = character.Direction.Opposite();
-                character.MoveProgress = 0f;
-                return;
-            }
+                    frame.Position += Vector2Int.down;
+                    return true;
 
-            character.Cell = nextCell;
-            character.EnteredNewCellThisFrame = true;
-        }
-
-        // 新しく入ったマスの地形、穴、看板、ゴールを評価します。穴は常に有効です。
-        private void EvaluateEnteredCellTerrainEffects()
-        {
-            CharacterRuntimeState character = State.Character;
-            if (!character.EnteredNewCellThisFrame)
-            {
-                return;
-            }
-
-            CellType terrain = State.GetTerrain(character.Cell);
-            if (terrain == CellType.Wall)
-            {
-                character.Direction = character.Direction.Opposite();
-                character.MoveProgress = 0f;
-                return;
-            }
-
-            if (terrain == CellType.Hole)
-            {
-                character.IsAlive = false;
-                return;
-            }
-
-            SignboardRuntimeState signboard = State.GetActiveSignboardAt(character.Cell);
-            if (signboard != null)
-            {
-                character.Direction = signboard.Direction;
-            }
-
-            if (terrain == CellType.Goal)
-            {
-                character.HasCleared = true;
+                default:
+                    return false;
             }
         }
 
-        private void ResolveDeathOrClear()
+        // 左辺を右へ縮めます。外れる列にいる看板は右へ押し、主人公がいるなら縮みません。
+        private bool TryShrinkLeftEdge()
         {
-            if (!State.Character.IsAlive && restartOnDeath)
+            FrameRuntimeState frame = State.Frame;
+            FrameRect resizedFrame = new FrameRect(frame.Position.x + 1, frame.Position.y, FrameRight, FrameBottom);
+            if (frame.Size.x <= frame.MinSize.x || !TryReleaseColumn(frame.Position.x, Direction.Right, resizedFrame))
             {
-                Restart();
+                return false;
             }
+
+            frame.Position += Vector2Int.right;
+            frame.Size += Vector2Int.left;
+            return true;
         }
 
-        // リサイズ時に固定辺を保ちながら、min/maxと盤面内に収めます。
-        private void ApplyResize(FrameRuntimeState frame, FrameInputCommand frameInput, Vector2Int pointerDelta)
+        // 右辺を左へ縮めます。外れる列にいる看板は左へ押し、主人公がいるなら縮みません。
+        private bool TryShrinkRightEdge()
         {
-            bool left = frameInput.Mode == FrameDragMode.Left || frameInput.Mode == FrameDragMode.TopLeft || frameInput.Mode == FrameDragMode.BottomLeft;
-            bool right = frameInput.Mode == FrameDragMode.Right || frameInput.Mode == FrameDragMode.TopRight || frameInput.Mode == FrameDragMode.BottomRight;
-            bool top = frameInput.Mode == FrameDragMode.Top || frameInput.Mode == FrameDragMode.TopLeft || frameInput.Mode == FrameDragMode.TopRight;
-            bool bottom = frameInput.Mode == FrameDragMode.Bottom || frameInput.Mode == FrameDragMode.BottomLeft || frameInput.Mode == FrameDragMode.BottomRight;
-
-            int x = frameInput.StartPosition.x;
-            int y = frameInput.StartPosition.y;
-            int width = frameInput.StartSize.x;
-            int height = frameInput.StartSize.y;
-
-            if (left)
+            FrameRuntimeState frame = State.Frame;
+            FrameRect resizedFrame = new FrameRect(frame.Position.x, frame.Position.y, FrameRight - 1, FrameBottom);
+            if (frame.Size.x <= frame.MinSize.x || !TryReleaseColumn(FrameRight - 1, Direction.Left, resizedFrame))
             {
-                int fixedRight = frameInput.StartPosition.x + frameInput.StartSize.x;
-                x = Mathf.Clamp(frameInput.StartPosition.x + pointerDelta.x, 0, fixedRight - frame.MinSize.x);
-                width = fixedRight - x;
-            }
-            else if (right)
-            {
-                width = frameInput.StartSize.x + pointerDelta.x;
+                return false;
             }
 
-            if (top)
-            {
-                int fixedBottom = frameInput.StartPosition.y + frameInput.StartSize.y;
-                y = Mathf.Clamp(frameInput.StartPosition.y + pointerDelta.y, 0, fixedBottom - frame.MinSize.y);
-                height = fixedBottom - y;
-            }
-            else if (bottom)
-            {
-                height = frameInput.StartSize.y + pointerDelta.y;
-            }
-
-            width = Mathf.Clamp(width, frame.MinSize.x, Mathf.Min(frame.MaxSize.x, State.Width - x));
-            height = Mathf.Clamp(height, frame.MinSize.y, Mathf.Min(frame.MaxSize.y, State.Height - y));
-            frame.Position = ClampFramePosition(new Vector2Int(x, y), new Vector2Int(width, height));
-            frame.Size = new Vector2Int(width, height);
+            frame.Size += Vector2Int.left;
+            return true;
         }
 
-        // 押す方向の奥から手前へ看板を処理し、1体ごとに占有セルを更新します。
-        private void ProcessSignboardPushes(Direction direction, int minX, int maxX, int minY, int maxY)
+        // 上辺を下へ縮めます。外れる行にいる看板は下へ押し、主人公がいるなら縮みません。
+        private bool TryShrinkTopEdge()
         {
-            HashSet<Vector2Int> occupiedCells = BuildSignboardCellSet();
+            FrameRuntimeState frame = State.Frame;
+            FrameRect resizedFrame = new FrameRect(frame.Position.x, frame.Position.y + 1, FrameRight, FrameBottom);
+            if (frame.Size.y <= frame.MinSize.y || !TryReleaseRow(frame.Position.y, Direction.Down, resizedFrame))
+            {
+                return false;
+            }
+
+            frame.Position += Vector2Int.up;
+            frame.Size += Vector2Int.down;
+            return true;
+        }
+
+        // 下辺を上へ縮めます。外れる行にいる看板は上へ押し、主人公がいるなら縮みません。
+        private bool TryShrinkBottomEdge()
+        {
+            FrameRuntimeState frame = State.Frame;
+            FrameRect resizedFrame = new FrameRect(frame.Position.x, frame.Position.y, FrameRight, FrameBottom - 1);
+            if (frame.Size.y <= frame.MinSize.y || !TryReleaseRow(FrameBottom - 1, Direction.Up, resizedFrame))
+            {
+                return false;
+            }
+
+            frame.Size += Vector2Int.down;
+            return true;
+        }
+
+        // 左辺を左へ広げます。拡大は何かを押し出さないので、盤面と最大サイズだけを見ます。
+        private bool TryExpandLeftEdge()
+        {
+            FrameRuntimeState frame = State.Frame;
+            if (frame.Position.x <= 0 || frame.Size.x >= frame.MaxSize.x)
+            {
+                return false;
+            }
+
+            frame.Position += Vector2Int.left;
+            frame.Size += Vector2Int.right;
+            return true;
+        }
+
+        // 右辺を右へ広げます。拡大は何かを押し出さないので、盤面と最大サイズだけを見ます。
+        private bool TryExpandRightEdge()
+        {
+            FrameRuntimeState frame = State.Frame;
+            if (FrameRight >= State.Width || frame.Size.x >= frame.MaxSize.x)
+            {
+                return false;
+            }
+
+            frame.Size += Vector2Int.right;
+            return true;
+        }
+
+        // 上辺を上へ広げます。拡大は何かを押し出さないので、盤面と最大サイズだけを見ます。
+        private bool TryExpandTopEdge()
+        {
+            FrameRuntimeState frame = State.Frame;
+            if (frame.Position.y <= 0 || frame.Size.y >= frame.MaxSize.y)
+            {
+                return false;
+            }
+
+            frame.Position += Vector2Int.down;
+            frame.Size += Vector2Int.up;
+            return true;
+        }
+
+        // 下辺を下へ広げます。拡大は何かを押し出さないので、盤面と最大サイズだけを見ます。
+        private bool TryExpandBottomEdge()
+        {
+            FrameRuntimeState frame = State.Frame;
+            if (FrameBottom >= State.Height || frame.Size.y >= frame.MaxSize.y)
+            {
+                return false;
+            }
+
+            frame.Size += Vector2Int.up;
+            return true;
+        }
+
+        // Frameから外れようとしている列を処理します。主人公は押さず、看板だけを押せる時に押します。
+        private bool TryReleaseColumn(int x, Direction pushDirection, FrameRect frameAfterStep)
+        {
+            FrameRuntimeState frame = State.Frame;
             Vector2Int characterCell = State.Character.Cell;
-            List<SignboardRuntimeState> candidates = new List<SignboardRuntimeState>();
+            if (characterCell.x == x && characterCell.y >= frame.Position.y && characterCell.y < FrameBottom)
+            {
+                return false;
+            }
+
+            List<SignboardRuntimeState> targets = new List<SignboardRuntimeState>();
             foreach (SignboardRuntimeState signboard in State.Signboards)
             {
                 if (signboard.Destroyed)
@@ -236,145 +303,135 @@ namespace SukimaWalker.Core
                     continue;
                 }
 
-                Vector2Int cell = new Vector2Int(signboard.X, signboard.Y);
-                if (cell.x < minX || cell.x >= maxX || cell.y < minY || cell.y >= maxY)
+                if (signboard.X == x && signboard.Y >= frame.Position.y && signboard.Y < FrameBottom)
                 {
-                    continue;
+                    targets.Add(signboard);
                 }
-
-                candidates.Add(signboard);
             }
 
-            SortSignboardsForPush(candidates, direction);
+            SortSignboardsForPush(targets, pushDirection);
+            return TryPushSignboards(targets, pushDirection, frameAfterStep);
+        }
 
-            foreach (SignboardRuntimeState signboard in candidates)
+        // Frameから外れようとしている行を処理します。主人公は押さず、看板だけを押せる時に押します。
+        private bool TryReleaseRow(int y, Direction pushDirection, FrameRect frameAfterStep)
+        {
+            FrameRuntimeState frame = State.Frame;
+            Vector2Int characterCell = State.Character.Cell;
+            if (characterCell.y == y && characterCell.x >= frame.Position.x && characterCell.x < FrameRight)
             {
-                Vector2Int cell = new Vector2Int(signboard.X, signboard.Y);
-                Vector2Int destination = cell + DirectionToCellStep(direction);
-                if (destination == characterCell || occupiedCells.Contains(destination) || State.GetTerrain(destination) == CellType.Wall)
+                return false;
+            }
+
+            List<SignboardRuntimeState> targets = new List<SignboardRuntimeState>();
+            foreach (SignboardRuntimeState signboard in State.Signboards)
+            {
+                if (signboard.Destroyed)
                 {
                     continue;
                 }
 
-                occupiedCells.Remove(cell);
-                if (State.GetTerrain(destination) == CellType.Hole)
+                if (signboard.Y == y && signboard.X >= frame.Position.x && signboard.X < FrameRight)
                 {
-                    signboard.Destroyed = true;
-                    continue;
+                    targets.Add(signboard);
                 }
+            }
 
-                signboard.X = destination.x;
-                signboard.Y = destination.y;
+            SortSignboardsForPush(targets, pushDirection);
+            return TryPushSignboards(targets, pushDirection, frameAfterStep);
+        }
+
+        // 複数看板を同時に押す時、奥の看板を先に計画してから手前を動かせるようにします。
+        private bool TryPushSignboards(List<SignboardRuntimeState> targets, Direction direction, FrameRect frameAfterStep)
+        {
+            if (targets.Count == 0)
+            {
+                return true;
+            }
+
+            HashSet<Vector2Int> occupiedCells = BuildSignboardCellSet();
+            HashSet<SignboardRuntimeState> plannedSignboards = new HashSet<SignboardRuntimeState>();
+            List<SignboardMove> plannedMoves = new List<SignboardMove>();
+
+            foreach (SignboardRuntimeState signboard in targets)
+            {
+                if (!TryPlanSignboardPush(signboard, direction, frameAfterStep, occupiedCells, plannedSignboards, plannedMoves))
+                {
+                    return false;
+                }
+            }
+
+            foreach (SignboardMove move in plannedMoves)
+            {
+                move.Signboard.PreviousX = move.Signboard.X;
+                move.Signboard.PreviousY = move.Signboard.Y;
+                move.Signboard.X = move.Destination.x;
+                move.Signboard.Y = move.Destination.y;
+                move.Signboard.Destroyed = move.Destroyed;
+            }
+
+            return true;
+        }
+
+        // 看板1枚が押せるかを再帰的に計画します。隣の看板が先に動ける場合は、その空きを使えます。
+        private bool TryPlanSignboardPush(
+            SignboardRuntimeState signboard,
+            Direction direction,
+            FrameRect frameAfterStep,
+            HashSet<Vector2Int> occupiedCells,
+            HashSet<SignboardRuntimeState> plannedSignboards,
+            List<SignboardMove> plannedMoves)
+        {
+            if (signboard.Destroyed || plannedSignboards.Contains(signboard))
+            {
+                return true;
+            }
+
+            Vector2Int current = new Vector2Int(signboard.X, signboard.Y);
+            Vector2Int destination = current + DirectionToCellStep(direction);
+
+            if (destination == State.Character.Cell || State.GetTerrain(destination) == CellType.Wall)
+            {
+                return false;
+            }
+
+            SignboardRuntimeState blockingSignboard = State.GetActiveSignboardAt(destination);
+            if (blockingSignboard != null && blockingSignboard != signboard)
+            {
+                if (!TryPlanSignboardPush(blockingSignboard, direction, frameAfterStep, occupiedCells, plannedSignboards, plannedMoves))
+                {
+                    return false;
+                }
+            }
+
+            occupiedCells.Remove(current);
+            bool fallsIntoHole = State.GetTerrain(destination) == CellType.Hole;
+            if (!fallsIntoHole && !frameAfterStep.Contains(destination))
+            {
+                return false;
+            }
+
+            if (!fallsIntoHole && occupiedCells.Contains(destination))
+            {
+                return false;
+            }
+
+            if (!fallsIntoHole)
+            {
                 occupiedCells.Add(destination);
             }
+
+            plannedSignboards.Add(signboard);
+            plannedMoves.Add(new SignboardMove(signboard, destination, fallsIntoHole));
+            return true;
         }
 
-        // 前フレームでFrame内にいた主人公と看板を、移動後のFrameにも必ず含めます。
-        private void ConstrainFrameToContainedActors()
-        {
-            ConstrainFrameToCells(GetActorsContainedByPreviousFrame());
-        }
-
-        // 「さっきまでFrame内にいたもの」だけを保護対象にして、Frame外のものは無理に取り込みません。
-        private List<Vector2Int> GetActorsContainedByPreviousFrame()
-        {
-            FrameRuntimeState previousFrame = new FrameRuntimeState
-            {
-                Position = State.Frame.PreviousPosition,
-                Size = State.Frame.PreviousSize
-            };
-            List<Vector2Int> cells = new List<Vector2Int>();
-
-            if (previousFrame.Contains(State.Character.Cell))
-            {
-                cells.Add(State.Character.Cell);
-            }
-
-            foreach (SignboardRuntimeState signboard in State.Signboards)
-            {
-                if (signboard.Destroyed)
-                {
-                    continue;
-                }
-
-                Vector2Int previousCell = new Vector2Int(signboard.PreviousX, signboard.PreviousY);
-                if (previousFrame.Contains(previousCell))
-                {
-                    cells.Add(new Vector2Int(signboard.X, signboard.Y));
-                }
-            }
-
-            return cells;
-        }
-
-        private void CachePreviousSignboardCells()
-        {
-            foreach (SignboardRuntimeState signboard in State.Signboards)
-            {
-                signboard.PreviousX = signboard.X;
-                signboard.PreviousY = signboard.Y;
-            }
-        }
-
-        // 主人公だけはFrameに押されないため、看板押し出しより前にFrame側を止めます。
-        private void ConstrainFrameToContainedCharacter()
-        {
-            FrameRuntimeState previousFrame = new FrameRuntimeState
-            {
-                Position = State.Frame.PreviousPosition,
-                Size = State.Frame.PreviousSize
-            };
-
-            if (!previousFrame.Contains(State.Character.Cell))
-            {
-                return;
-            }
-
-            ConstrainFrameToCells(new List<Vector2Int> { State.Character.Cell });
-        }
-
-        private void ConstrainFrameToCells(List<Vector2Int> protectedCells)
-        {
-            if (protectedCells.Count == 0)
-            {
-                return;
-            }
-
-            FrameRuntimeState frame = State.Frame;
-            int minProtectedX = protectedCells[0].x;
-            int maxProtectedX = protectedCells[0].x;
-            int minProtectedY = protectedCells[0].y;
-            int maxProtectedY = protectedCells[0].y;
-
-            foreach (Vector2Int cell in protectedCells)
-            {
-                minProtectedX = Mathf.Min(minProtectedX, cell.x);
-                maxProtectedX = Mathf.Max(maxProtectedX, cell.x);
-                minProtectedY = Mathf.Min(minProtectedY, cell.y);
-                maxProtectedY = Mathf.Max(maxProtectedY, cell.y);
-            }
-
-            int requiredWidth = maxProtectedX - minProtectedX + 1;
-            int requiredHeight = maxProtectedY - minProtectedY + 1;
-            frame.Size = new Vector2Int(
-                Mathf.Clamp(Mathf.Max(frame.Size.x, requiredWidth), frame.MinSize.x, Mathf.Min(frame.MaxSize.x, State.Width)),
-                Mathf.Clamp(Mathf.Max(frame.Size.y, requiredHeight), frame.MinSize.y, Mathf.Min(frame.MaxSize.y, State.Height)));
-
-            int minAllowedX = Mathf.Max(0, maxProtectedX - frame.Size.x + 1);
-            int maxAllowedX = Mathf.Min(State.Width - frame.Size.x, minProtectedX);
-            int minAllowedY = Mathf.Max(0, maxProtectedY - frame.Size.y + 1);
-            int maxAllowedY = Mathf.Min(State.Height - frame.Size.y, minProtectedY);
-
-            frame.Position = new Vector2Int(
-                Mathf.Clamp(frame.Position.x, minAllowedX, maxAllowedX),
-                Mathf.Clamp(frame.Position.y, minAllowedY, maxAllowedY));
-        }
-
-        private static void SortSignboardsForPush(List<SignboardRuntimeState> signboards, Direction direction)
+        // 押す方向から見て奥側の看板を先に処理するための並び替えです。
+        private static void SortSignboardsForPush(List<SignboardRuntimeState> signboards, Direction pushDirection)
         {
             signboards.Sort((a, b) =>
             {
-                switch (direction)
+                switch (pushDirection)
                 {
                     case Direction.Right:
                         return b.X.CompareTo(a.X);
@@ -390,6 +447,7 @@ namespace SukimaWalker.Core
             });
         }
 
+        // 現在生きている看板のセル集合を作ります。
         private HashSet<Vector2Int> BuildSignboardCellSet()
         {
             HashSet<Vector2Int> occupiedCells = new HashSet<Vector2Int>();
@@ -404,13 +462,201 @@ namespace SukimaWalker.Core
             return occupiedCells;
         }
 
+        // 主人公の次セルがFrame外なら、Frame辺に触れた扱いでその場で180度反転します。
+        private void ResolveFrameEdgeCharacterCollision()
+        {
+            CharacterRuntimeState character = State.Character;
+            if (!State.Frame.Contains(character.Cell))
+            {
+                return;
+            }
+
+            Vector2Int nextCell = character.Cell + DirectionToCellStep(character.Direction);
+            if (!State.Frame.Contains(nextCell))
+            {
+                character.Direction = character.Direction.Opposite();
+                character.MoveProgress = 0f;
+            }
+        }
+
+        // 主人公を1マス単位で進めます。壁に当たった時は移動せず180度反転します。
+        private void MoveCharacter(float deltaTime)
+        {
+            CharacterRuntimeState character = State.Character;
+            character.MoveProgress += Mathf.Max(0f, deltaTime) * character.Speed;
+            if (character.MoveProgress < 1f)
+            {
+                return;
+            }
+
+            character.MoveProgress -= 1f;
+            Vector2Int nextCell = character.Cell + DirectionToCellStep(character.Direction);
+            if (State.GetTerrain(nextCell) == CellType.Wall)
+            {
+                character.Direction = character.Direction.Opposite();
+                character.MoveProgress = 0f;
+                return;
+            }
+
+            character.Cell = nextCell;
+            character.EnteredNewCellThisFrame = true;
+        }
+
+        // 新しいセルに入った時だけ、穴、ゴール、看板の効果を評価します。
+        private void EvaluateEnteredCellTerrainEffects()
+        {
+            CharacterRuntimeState character = State.Character;
+            if (!character.EnteredNewCellThisFrame)
+            {
+                return;
+            }
+
+            CellType terrain = State.GetTerrain(character.Cell);
+            if (terrain == CellType.Hole)
+            {
+                character.IsAlive = false;
+                return;
+            }
+
+            if (terrain == CellType.Goal)
+            {
+                character.HasCleared = true;
+                return;
+            }
+
+            SignboardRuntimeState signboard = State.GetActiveSignboardAt(character.Cell);
+            if (signboard != null)
+            {
+                character.Direction = signboard.Direction;
+            }
+        }
+
+        // 死亡時の自動リスタート設定だけをここで処理します。
+        private void ResolveDeathOrClear()
+        {
+            if (!State.Character.IsAlive && restartOnDeath)
+            {
+                Restart();
+            }
+        }
+
+        // リサイズ入力から、最終的に目指すFrame矩形をmin/maxと盤面内に収めて作ります。
+        private FrameRect BuildResizeTarget(FrameInputCommand frameInput, Vector2Int pointerDelta)
+        {
+            int left = frameInput.StartPosition.x;
+            int top = frameInput.StartPosition.y;
+            int right = frameInput.StartPosition.x + frameInput.StartSize.x;
+            int bottom = frameInput.StartPosition.y + frameInput.StartSize.y;
+
+            bool resizeLeft = frameInput.Mode == FrameDragMode.Left
+                || frameInput.Mode == FrameDragMode.TopLeft
+                || frameInput.Mode == FrameDragMode.BottomLeft;
+            bool resizeRight = frameInput.Mode == FrameDragMode.Right
+                || frameInput.Mode == FrameDragMode.TopRight
+                || frameInput.Mode == FrameDragMode.BottomRight;
+            bool resizeTop = frameInput.Mode == FrameDragMode.Top
+                || frameInput.Mode == FrameDragMode.TopLeft
+                || frameInput.Mode == FrameDragMode.TopRight;
+            bool resizeBottom = frameInput.Mode == FrameDragMode.Bottom
+                || frameInput.Mode == FrameDragMode.BottomLeft
+                || frameInput.Mode == FrameDragMode.BottomRight;
+
+            if (resizeLeft)
+            {
+                left += pointerDelta.x;
+            }
+
+            if (resizeRight)
+            {
+                right += pointerDelta.x;
+            }
+
+            if (resizeTop)
+            {
+                top += pointerDelta.y;
+            }
+
+            if (resizeBottom)
+            {
+                bottom += pointerDelta.y;
+            }
+
+            FrameRuntimeState frame = State.Frame;
+            int minWidth = frame.MinSize.x;
+            int minHeight = frame.MinSize.y;
+            int maxWidth = Mathf.Min(frame.MaxSize.x, State.Width);
+            int maxHeight = Mathf.Min(frame.MaxSize.y, State.Height);
+
+            left = Mathf.Clamp(left, 0, State.Width - minWidth);
+            right = Mathf.Clamp(right, minWidth, State.Width);
+            top = Mathf.Clamp(top, 0, State.Height - minHeight);
+            bottom = Mathf.Clamp(bottom, minHeight, State.Height);
+
+            if (right - left < minWidth)
+            {
+                if (resizeLeft && !resizeRight)
+                {
+                    left = right - minWidth;
+                }
+                else
+                {
+                    right = left + minWidth;
+                }
+            }
+
+            if (bottom - top < minHeight)
+            {
+                if (resizeTop && !resizeBottom)
+                {
+                    top = bottom - minHeight;
+                }
+                else
+                {
+                    bottom = top + minHeight;
+                }
+            }
+
+            if (right - left > maxWidth)
+            {
+                if (resizeLeft && !resizeRight)
+                {
+                    left = right - maxWidth;
+                }
+                else
+                {
+                    right = left + maxWidth;
+                }
+            }
+
+            if (bottom - top > maxHeight)
+            {
+                if (resizeTop && !resizeBottom)
+                {
+                    top = bottom - maxHeight;
+                }
+                else
+                {
+                    bottom = top + maxHeight;
+                }
+            }
+
+            left = Mathf.Clamp(left, 0, State.Width - minWidth);
+            right = Mathf.Clamp(right, left + minWidth, State.Width);
+            top = Mathf.Clamp(top, 0, State.Height - minHeight);
+            bottom = Mathf.Clamp(bottom, top + minHeight, State.Height);
+
+            return new FrameRect(left, top, right, bottom);
+        }
+
+        // Frame左上座標を、現在サイズのまま盤面内に収めます。
         private Vector2Int ClampFramePosition(Vector2Int position, Vector2Int size)
         {
             return new Vector2Int(
-                Mathf.Clamp(position.x, 0, Mathf.Max(0, State.Width - size.x)),
-                Mathf.Clamp(position.y, 0, Mathf.Max(0, State.Height - size.y)));
+                Mathf.Clamp(position.x, 0, State.Width - size.x),
+                Mathf.Clamp(position.y, 0, State.Height - size.y));
         }
 
+        // ゲーム内の上下左右を、Y下向きのグリッド座標に変換します。
         private static Vector2Int DirectionToCellStep(Direction direction)
         {
             switch (direction)
@@ -428,5 +674,46 @@ namespace SukimaWalker.Core
             }
         }
 
+        private int FrameRight => State.Frame.Position.x + State.Frame.Size.x;
+
+        private int FrameBottom => State.Frame.Position.y + State.Frame.Size.y;
+
+        private struct FrameRect
+        {
+            public readonly int Left;
+            public readonly int Top;
+            public readonly int Right;
+            public readonly int Bottom;
+
+            public FrameRect(int left, int top, int right, int bottom)
+            {
+                Left = left;
+                Top = top;
+                Right = right;
+                Bottom = bottom;
+            }
+
+            public bool Contains(Vector2Int cell)
+            {
+                return cell.x >= Left
+                    && cell.y >= Top
+                    && cell.x < Right
+                    && cell.y < Bottom;
+            }
+        }
+
+        private struct SignboardMove
+        {
+            public readonly SignboardRuntimeState Signboard;
+            public readonly Vector2Int Destination;
+            public readonly bool Destroyed;
+
+            public SignboardMove(SignboardRuntimeState signboard, Vector2Int destination, bool destroyed)
+            {
+                Signboard = signboard;
+                Destination = destination;
+                Destroyed = destroyed;
+            }
+        }
     }
 }

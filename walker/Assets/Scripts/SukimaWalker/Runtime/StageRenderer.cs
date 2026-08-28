@@ -249,7 +249,7 @@ namespace SukimaWalker.Runtime
                 case CellType.Wall:
                     return new Color(0.12f, 0.14f, 0.17f, 1f);
                 case CellType.Hole:
-                    return new Color(0.05f, 0.05f, 0.07f, 1f);
+                    return new Color(0.18f, 0.18f, 0.24f, 1f);
                 case CellType.Goal:
                     return new Color(0.25f, 0.8f, 0.42f, 1f);
                 case CellType.Floor:
